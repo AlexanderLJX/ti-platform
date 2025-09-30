@@ -96,104 +96,104 @@ class CrowdStrikeScraper(BaseScraper, BasePlugin):
             return False
     
     def _scrape_threat_actor_indicators(self, threat_actor: ThreatActor) -> Optional[str]:
-        """Scrape indicators for a CrowdStrike threat actor.
-        
+        """Scrape indicators for a CrowdStrike threat actor using robust waiting and clicking strategy.
+
         Args:
             threat_actor: Threat actor to scrape
-            
+
         Returns:
             Path to downloaded file, or None if failed
         """
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.common.exceptions import TimeoutException
+
         try:
             # Use slug or URL as actor identifier
             actor_slug = threat_actor.slug or threat_actor.url
             if not actor_slug:
                 self.logger.error(f"No valid actor slug for {threat_actor.name}")
                 return None
-            
+
             # Construct the indicators URL
             url = selectors.get_indicators_url(actor_slug)
             self.logger.info(f"Processing actor: {threat_actor.name} ({actor_slug})")
             self.logger.debug(f"URL: {url}")
-            
+
             # Navigate to indicators page
             if not self.selenium_helper.navigate_to(url, wait_time=5):
                 self.logger.error(f"Failed to navigate to indicators page for {threat_actor.name}")
                 return None
 
-            # Wait for page to load AND export button to be ready (combined check)
-            if not self._wait_for_page_ready(threat_actor.name):
-                self.logger.error(f"Page not ready for {threat_actor.name}")
+            # Step 1: Use explicit wait for export button to be clickable
+            export_button_selector = (By.CSS_SELECTOR, 'div[data-test-selector="file-export"] button[data-test-selector="falcon-popover-trigger"]')
+
+            try:
+                self.logger.info(f"Waiting for Export button to become clickable for {threat_actor.name}...")
+                wait = WebDriverWait(self.driver, 30)
+                export_button = wait.until(EC.element_to_be_clickable(export_button_selector))
+                self.logger.info(f"Export button is ready for {threat_actor.name}")
+            except TimeoutException:
+                self.logger.error(f"Timeout: Export button not found or not clickable for {threat_actor.name}")
                 return None
 
-            self.logger.info(f"Page ready and export button found for {threat_actor.name}")
+            # Step 2: Click export button
+            self.logger.info(f"Clicking the Export button for {threat_actor.name}...")
+            if not self.selenium_helper.click_element_safe(export_button, use_js=True):
+                self.logger.error(f"Failed to click export button for {threat_actor.name}")
+                return None
 
-            # Clear any overlays that might block interactions
-            self.logger.debug("Removing overlays...")
-            self.selenium_helper.remove_overlays()
-            self.logger.debug("Overlays removed")
+            # Step 3: Wait for CSV option and click it
+            try:
+                self.logger.info(f"Waiting for CSV button for {threat_actor.name}...")
+                csv_button = WebDriverWait(self.driver, 10).until(EC.element_to_be_clickable(selectors.CSV_BUTTON))
 
-            # Step 2: Click export button to open dropdown (refind element before clicking)
-            self.logger.info(f"About to click export button for {threat_actor.name}")
-            if not self._click_export_button_with_retry(threat_actor.name):
-                self.logger.error(f"Failed to open export dropdown for {threat_actor.name}")
+                if not self.selenium_helper.click_element_safe(csv_button, use_js=True):
+                    self.logger.error(f"Failed to click CSV button for {threat_actor.name}")
+                    return None
+
+                self.logger.info(f"CSV export initiated for {threat_actor.name}")
+            except TimeoutException:
+                self.logger.error(f"CSV button did not appear for {threat_actor.name}")
                 return None
-            
-            time.sleep(2)  # Wait for dropdown to render
-            
-            # Step 3: Click CSV option
-            csv_button = self.selenium_helper.wait_for_element_clickable(*selectors.CSV_BUTTON)
-            if not csv_button:
-                self.logger.error(f"CSV button not found for {threat_actor.name}")
-                return None
-            
-            # Scroll CSV button into view and click
-            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", csv_button)
-            time.sleep(0.5)
-            
-            if not self.selenium_helper.click_element_safe(csv_button, use_js=True):
-                self.logger.error(f"Failed to click CSV button for {threat_actor.name}")
-                return None
-            
-            self.logger.info(f"CSV export initiated for {threat_actor.name}")
-            
+
             # Step 4: Wait for download to be ready
             if not self._wait_for_download_ready(threat_actor.name):
                 self.logger.error(f"Download not ready for {threat_actor.name}")
                 return None
-            
+
             # Step 5: Download the file
             files_before = self.file_handler.get_files_before_download()
-            
+
             download_button = self.selenium_helper.find_element_safe(*selectors.DOWNLOAD_BUTTON)
             if not download_button:
                 self.logger.error(f"Download button not found for {threat_actor.name}")
                 return None
-            
+
             if not self.selenium_helper.click_element_safe(download_button, use_js=True):
                 self.logger.error(f"Failed to click download button for {threat_actor.name}")
                 return None
-            
+
             self.logger.info(f"Download started for {threat_actor.name}")
-            
+
             # Wait for file download
             downloaded_file = self.file_handler.wait_for_download(
                 timeout=self.config.download_timeout,
                 initial_files=files_before
             )
-            
+
             if not downloaded_file:
                 self.logger.error(f"Download timeout for {threat_actor.name}")
                 return None
-            
+
             # Step 6: Clean up server file
             self._cleanup_server_file(threat_actor.name)
-            
+
             self.logger.info(f"Download completed for {threat_actor.name}: {downloaded_file}")
             return downloaded_file
-            
+
         except Exception as e:
-            self.logger.error(f"Error downloading indicators for {threat_actor.name}: {e}")
+            self.logger.error(f"An unexpected error occurred while downloading indicators for {threat_actor.name}: {e}")
             return None
     
     def _wait_for_page_ready(self, actor_name: str, timeout: int = 20) -> bool:

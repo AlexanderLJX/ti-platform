@@ -93,18 +93,18 @@ class DataProcessor:
     
     def parse_date(self, date_str: Any) -> Optional[datetime]:
         """Parse date string into datetime object.
-        
+
         Args:
             date_str: Date string to parse
-            
+
         Returns:
             Datetime object or None if parsing fails
         """
         if pd.isna(date_str):
             return None
-        
+
         date_str = str(date_str).strip()
-        
+
         # Common date formats
         formats = [
             '%Y-%m-%d',               # 2023-10-10
@@ -114,15 +114,106 @@ class DataProcessor:
             '%d/%m/%Y',               # 15/01/2023
             '%Y-%m-%d %H:%M:%S',      # 2023-10-10 15:30:00
         ]
-        
+
         for fmt in formats:
             try:
                 return datetime.strptime(date_str, fmt)
             except ValueError:
                 continue
-        
+
         self.logger.warning(f"Could not parse date: {date_str}")
         return None
+
+    def generate_description(self, row_data: Dict[str, Any]) -> str:
+        """Generate a detailed description for an IOC.
+
+        Args:
+            row_data: Dictionary containing IOC data
+
+        Returns:
+            Formatted description string
+        """
+        parts = []
+
+        # Source and indicator type
+        source = row_data.get('Source', 'unknown source')
+        indicator_type = row_data.get('Original Type', 'indicator')
+        indicator_value = row_data.get('IP') or row_data.get('Domain', 'Unknown')
+        parts.append(f"[Source: {source.upper()}] This {indicator_type} ({indicator_value}) is associated with {row_data.get('Threat Actor Name', 'unknown threat actor')}.")
+
+        # Confidence and scores
+        confidence = row_data.get('Confidence')
+        ic_score = row_data.get('IC Score')
+        threat_score = row_data.get('Threat Score')
+        if confidence or ic_score or threat_score:
+            score_parts = []
+            if confidence:
+                score_parts.append(f"{confidence} confidence")
+            if ic_score:
+                score_parts.append(f"IC Score: {ic_score}")
+            if threat_score:
+                score_parts.append(f"Threat Score: {threat_score}")
+            parts.append(f"Intelligence assessment: {', '.join(score_parts)}.")
+
+        # Malware information (from both sources)
+        malware_info = []
+        if not pd.isna(row_data.get('Associated Malware')):
+            malware_info.append(str(row_data.get('Associated Malware')))
+        if not pd.isna(row_data.get('Malware Families')):
+            malware_info.append(str(row_data.get('Malware Families')))
+        if malware_info:
+            parts.append(f"Associated malware: {', '.join(malware_info)}.")
+
+        # Tools
+        if not pd.isna(row_data.get('Associated Tools')):
+            parts.append(f"Tools used: {row_data.get('Associated Tools')}.")
+
+        # Campaigns
+        if not pd.isna(row_data.get('Associated Campaigns')):
+            parts.append(f"Related campaigns: {row_data.get('Associated Campaigns')}.")
+
+        # Kill chain stages
+        if not pd.isna(row_data.get('Kill Chains')):
+            parts.append(f"Kill chain stages: {row_data.get('Kill Chains')}.")
+
+        # Reports
+        reports = []
+        if not pd.isna(row_data.get('Associated Reports')):
+            reports.append(str(row_data.get('Associated Reports')))
+        if not pd.isna(row_data.get('Reports')):
+            reports.append(str(row_data.get('Reports')))
+        if reports:
+            parts.append(f"Referenced in reports: {', '.join(reports)}.")
+
+        # Labels/tags
+        if not pd.isna(row_data.get('Labels')):
+            parts.append(f"Tags: {row_data.get('Labels')}.")
+
+        # Dates
+        first_seen = row_data.get('First Seen')
+        last_seen = row_data.get('Last Seen')
+        if first_seen or last_seen:
+            date_parts = []
+            if first_seen:
+                date_parts.append(f"first observed {first_seen}")
+            if last_seen:
+                date_parts.append(f"last seen {last_seen}")
+            parts.append(f"Activity timeline: {', '.join(date_parts)}.")
+
+        # Hashes if available
+        hashes = []
+        if not pd.isna(row_data.get('SHA256')):
+            hashes.append(f"SHA256: {row_data.get('SHA256')}")
+        if not pd.isna(row_data.get('SHA1')):
+            hashes.append(f"SHA1: {row_data.get('SHA1')}")
+        if hashes:
+            parts.append(f"File hashes: {', '.join(hashes)}.")
+
+        # Exclusive intel
+        if row_data.get('Exclusive') == True or row_data.get('Exclusive') == 'True':
+            parts.append("This is exclusive intelligence.")
+
+        return ' '.join(parts)
     
     def is_within_date_filter(self, date_str: Any) -> bool:
         """Check if date is within the configured filter window.
@@ -174,21 +265,41 @@ class DataProcessor:
             
             # Convert confidence
             confidence = self.convert_ic_score_to_confidence(ic_score)
-            
-            processed_rows.append({
+
+            row_dict = {
                 'Threat Actor Name': threat_actor_name,
                 'IP': ip,
                 'Domain': domain,
                 'Confidence': confidence.value if confidence else None,
                 'Source': 'mandiant',
                 'Last Seen': self.parse_date(row.get('Last Seen')),
+                'First Seen': self.parse_date(row.get('First Seen')),
                 'IC Score': ic_score,
+                'Threat Score': row.get('Threat Score'),
                 'Original Type': indicator_type,
+                'Associated Actors': row.get('Associated Actors'),
+                'Associated Malware': row.get('Associated Malware'),
+                'Associated Tools': row.get('Associated Tools'),
+                'Associated Campaigns': row.get('Associated Campaigns'),
+                'Associated Reports': row.get('Associated Reports'),
+                'Exclusive': row.get('Exclusive'),
+                'SHA1': row.get('SHA1'),
+                'SHA256': row.get('SHA256'),
+                'Malware Families': None,
+                'Actors': None,
+                'Reports': None,
+                'Kill Chains': None,
+                'Labels': None,
                 'Metadata': {
                     'original_indicator': indicator_value,
                     'threat_actor_id': row.get('threat_actor_id')
                 }
-            })
+            }
+
+            # Generate description
+            row_dict['Description'] = self.generate_description(row_dict)
+
+            processed_rows.append(row_dict)
         
         return pd.DataFrame(processed_rows)
     
@@ -230,22 +341,42 @@ class DataProcessor:
                 conf_str = str(malicious_confidence).lower()
                 if conf_str in ['low', 'medium', 'high']:
                     confidence = conf_str.title()
-            
-            processed_rows.append({
+
+            row_dict = {
                 'Threat Actor Name': threat_actor_name,
                 'IP': ip,
                 'Domain': domain,
                 'Confidence': confidence,
                 'Source': 'crowdstrike',
                 'Last Seen': self.parse_date(row.get('last_updated')),
+                'First Seen': self.parse_date(row.get('published_date')),
                 'IC Score': None,
+                'Threat Score': None,
                 'Original Type': indicator_type,
+                'Malware Families': row.get('malware_families'),
+                'Actors': row.get('actors'),
+                'Reports': row.get('reports'),
+                'Kill Chains': row.get('kill_chains'),
+                'Labels': row.get('labels'),
+                'Associated Actors': None,
+                'Associated Malware': None,
+                'Associated Tools': None,
+                'Associated Campaigns': None,
+                'Associated Reports': None,
+                'Exclusive': None,
+                'SHA1': None,
+                'SHA256': None,
                 'Metadata': {
                     'original_indicator': indicator,
                     'threat_actor_slug': row.get('threat_actor_slug'),
                     'malicious_confidence': malicious_confidence
                 }
-            })
+            }
+
+            # Generate description
+            row_dict['Description'] = self.generate_description(row_dict)
+
+            processed_rows.append(row_dict)
         
         return pd.DataFrame(processed_rows)
     
@@ -329,6 +460,59 @@ class DataProcessor:
             
             # Combine all processed data
             final_df = pd.concat(all_processed_data, ignore_index=True)
+            
+            # Deduplicate indicators
+            final_df['indicator_value'] = final_df['IP'].fillna(final_df['Domain'])
+            final_df = final_df.sort_values('Last Seen', ascending=False)
+
+            # Map confidence to numerical values for aggregation
+            confidence_mapping = {'Low': 1, 'Medium': 2, 'High': 3}
+            final_df['Confidence_numeric'] = final_df['Confidence'].map(confidence_mapping)
+
+            # Helper function to combine non-null values
+            def combine_values(series):
+                unique_values = series.dropna().astype(str).unique()
+                return ', '.join(unique_values) if len(unique_values) > 0 else None
+
+            aggregation_functions = {
+                'Threat Actor Name': 'first',
+                'IP': 'first',
+                'Domain': 'first',
+                'Confidence_numeric': 'max',
+                'Source': lambda x: ', '.join(x.unique()),
+                'Last Seen': 'first',
+                'First Seen': 'first',
+                'IC Score': 'max',
+                'Threat Score': 'max',
+                'Original Type': 'first',
+                'Associated Actors': combine_values,
+                'Associated Malware': combine_values,
+                'Associated Tools': combine_values,
+                'Associated Campaigns': combine_values,
+                'Associated Reports': combine_values,
+                'Exclusive': 'first',
+                'SHA1': 'first',
+                'SHA256': 'first',
+                'Malware Families': combine_values,
+                'Actors': combine_values,
+                'Reports': combine_values,
+                'Kill Chains': combine_values,
+                'Labels': combine_values,
+                'Description': 'first',
+                'Metadata': lambda x: {k: v for d in x for k, v in d.items()},
+                'source_file': lambda x: ', '.join(x.unique())
+            }
+
+            final_df = final_df.groupby('indicator_value').agg(aggregation_functions).reset_index()
+
+            # Map confidence back to string values
+            reverse_confidence_mapping = {v: k for k, v in confidence_mapping.items()}
+            final_df['Confidence'] = final_df['Confidence_numeric'].map(reverse_confidence_mapping)
+            final_df = final_df.drop(columns=['indicator_value', 'Confidence_numeric'])
+
+
+
+
             
             # Remove rows where both IP and Domain are None
             final_df = final_df.dropna(subset=['IP', 'Domain'], how='all')

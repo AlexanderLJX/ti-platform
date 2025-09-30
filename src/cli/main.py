@@ -6,7 +6,7 @@ from rich.console import Console
 from .commands import (
     scrape, combine, validate_config, clear_profile,
     process_iocs, enrich_batch, analyze_threats, 
-    export_data, list_plugins, plugin_status
+    export_data, list_plugins, plugin_status, split_indicators
 )
 from ..core.startup import initialize_platform, cleanup_platform
 
@@ -62,6 +62,7 @@ cli.add_command(analyze_threats, name="analyze-threats")
 cli.add_command(export_data, name="export")
 cli.add_command(list_plugins, name="plugins")
 cli.add_command(plugin_status, name="plugin-status")
+cli.add_command(split_indicators, name="split-indicators")
 
 
 if __name__ == "__main__":

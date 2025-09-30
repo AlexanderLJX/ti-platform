@@ -1,0 +1,71 @@
+scrapers:
+  mandiant:
+    enabled: true
+    name: "Mandiant Advantage"
+    base_url: "https://advantage.mandiant.com"
+    login_url: "https://login.mandiant.com/"
+    download_timeout: 30
+    retry_attempts: 3
+    profile_path: "profiles/chrome_shared"
+    download_path: "downloads/mandiant"
+    output_path: "output/raw/mandiant"
+    
+  crowdstrike:
+    enabled: true
+    name: "CrowdStrike Falcon"
+    base_url: "https://falcon.crowdstrike.com"
+    login_url: "https://falcon.crowdstrike.com/login"
+    download_timeout: 90
+    retry_attempts: 3
+    profile_path: "profiles/chrome_shared"
+    download_path: "downloads/crowdstrike"
+    output_path: "output/raw/crowdstrike"
+
+data_processing:
+  date_filter_days: 135
+  confidence_mapping:
+    ic_score_thresholds: [25, 75]  # Low: 0-25, Medium: 25-75, High: 75-100
+  output_formats: ["csv", "json", "stix"]
+  combined_output_path: "output/combined"
+
+enrichment:
+  # Geolocation Services
+  maxmind_db_path: "data/enrichment/GeoLite2-City.mmdb"
+  ipinfo_api_key: "${IPINFO_API_KEY}"
+  
+  # Reputation Services
+  virustotal_api_key: "${VIRUSTOTAL_API_KEY}"
+  urlvoid_api_key: "${URLVOID_API_KEY}"
+  
+  # Rate Limiting
+  rate_limit_per_minute: 60
+  request_timeout: 30
+  max_concurrent_requests: 5
+  
+  # Cache Settings
+  enable_cache: true
+  cache_duration_hours: 24
+  
+  # Enrichment Options
+  auto_enrich: false
+  enrichment_sources: ["geolocation", "asn", "reputation"]
+  skip_private_ips: true
+
+browser:
+  headless: false
+  download_timeout: 30
+  page_load_timeout: 20
+  implicit_wait: 10
+  window_size: [1920, 1080]
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/threat_intel.log"
+  max_file_size: "10MB"
+  backup_count: 5
+
+threat_actors:
+  sources:
+    mandiant: "data/input/threat_actors/mandiant.yml"
+    crowdstrike: "data/input/threat_actors/crowdstrike.yml"

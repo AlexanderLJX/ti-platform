@@ -264,6 +264,9 @@ def combine(config: Optional[str], output: Optional[str], log_level: str):
 @click.option("--output-dir", "-o",
               type=click.Path(path_type=Path),
               help="Output directory for separated files.")
+@click.option("--by-source", "-s",
+              is_flag=True,
+              help="Split by source (Mandiant/CrowdStrike) in addition to type")
 @click.option("--config", "-c",
               type=click.Path(exists=True),
               help="Path to configuration file")
@@ -271,10 +274,10 @@ def combine(config: Optional[str], output: Optional[str], log_level: str):
               type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"]),
               default="INFO",
               help="Logging level")
-def split_indicators(input_file: Optional[Path], output_dir: Optional[Path], config: Optional[str], log_level: str):
-    """Split combined indicators into separate files for IPs and domains."""
+def split_indicators(input_file: Optional[Path], output_dir: Optional[Path], by_source: bool, config: Optional[str], log_level: str):
+    """Split combined indicators into separate files for IPs and domains, optionally by source."""
     setup_logging(log_level)
-    
+
     try:
         import pandas as pd
         import os
@@ -291,33 +294,79 @@ def split_indicators(input_file: Optional[Path], output_dir: Optional[Path], con
 
         if not output_dir:
             output_dir = Path("output/separated")
-        
+
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        ip_output_file = output_dir / "ip_addresses.csv"
-        domain_output_file = output_dir / "domains.csv"
+        if by_source:
+            # Split by source and type
+            mandiant_ip_file = output_dir / "mandiant_ip_addresses.csv"
+            mandiant_domain_file = output_dir / "mandiant_domains.csv"
+            crowdstrike_ip_file = output_dir / "crowdstrike_ip_addresses.csv"
+            crowdstrike_domain_file = output_dir / "crowdstrike_domains.csv"
 
-        chunk_size = 1000
-        ip_header_written = False
-        domain_header_written = False
+            headers_written = {
+                'mandiant_ip': False,
+                'mandiant_domain': False,
+                'crowdstrike_ip': False,
+                'crowdstrike_domain': False
+            }
 
-        for chunk in pd.read_csv(input_file, chunksize=chunk_size, low_memory=False):
-            ip_chunk = chunk[chunk["IP"].notna()]
-            if not ip_chunk.empty:
-                ip_chunk.to_csv(ip_output_file, mode='a', header=not ip_header_written, index=False, quoting=1)
-                ip_header_written = True
+            chunk_size = 1000
+            for chunk in pd.read_csv(input_file, chunksize=chunk_size, low_memory=False):
+                # Mandiant IPs
+                mandiant_ip_chunk = chunk[(chunk["IP"].notna()) & (chunk["Source"].str.contains('mandiant', case=False, na=False))]
+                if not mandiant_ip_chunk.empty:
+                    mandiant_ip_chunk.to_csv(mandiant_ip_file, mode='a', header=not headers_written['mandiant_ip'], index=False, quoting=1)
+                    headers_written['mandiant_ip'] = True
 
-            domain_chunk = chunk[chunk["Domain"].notna()]
-            if not domain_chunk.empty:
-                domain_chunk.to_csv(domain_output_file, mode='a', header=not domain_header_written, index=False, quoting=1)
-                domain_header_written = True
-        
-        click.echo(f"[OK] Successfully split indicators into {ip_output_file} and {domain_output_file}")
+                # Mandiant Domains
+                mandiant_domain_chunk = chunk[(chunk["Domain"].notna()) & (chunk["Source"].str.contains('mandiant', case=False, na=False))]
+                if not mandiant_domain_chunk.empty:
+                    mandiant_domain_chunk.to_csv(mandiant_domain_file, mode='a', header=not headers_written['mandiant_domain'], index=False, quoting=1)
+                    headers_written['mandiant_domain'] = True
+
+                # CrowdStrike IPs
+                crowdstrike_ip_chunk = chunk[(chunk["IP"].notna()) & (chunk["Source"].str.contains('crowdstrike', case=False, na=False))]
+                if not crowdstrike_ip_chunk.empty:
+                    crowdstrike_ip_chunk.to_csv(crowdstrike_ip_file, mode='a', header=not headers_written['crowdstrike_ip'], index=False, quoting=1)
+                    headers_written['crowdstrike_ip'] = True
+
+                # CrowdStrike Domains
+                crowdstrike_domain_chunk = chunk[(chunk["Domain"].notna()) & (chunk["Source"].str.contains('crowdstrike', case=False, na=False))]
+                if not crowdstrike_domain_chunk.empty:
+                    crowdstrike_domain_chunk.to_csv(crowdstrike_domain_file, mode='a', header=not headers_written['crowdstrike_domain'], index=False, quoting=1)
+                    headers_written['crowdstrike_domain'] = True
+
+            click.echo(f"[OK] Successfully split indicators by source:")
+            click.echo(f"  - Mandiant IPs: {mandiant_ip_file}")
+            click.echo(f"  - Mandiant Domains: {mandiant_domain_file}")
+            click.echo(f"  - CrowdStrike IPs: {crowdstrike_ip_file}")
+            click.echo(f"  - CrowdStrike Domains: {crowdstrike_domain_file}")
+        else:
+            # Original behavior - split by type only
+            ip_output_file = output_dir / "ip_addresses.csv"
+            domain_output_file = output_dir / "domains.csv"
+
+            chunk_size = 1000
+            ip_header_written = False
+            domain_header_written = False
+
+            for chunk in pd.read_csv(input_file, chunksize=chunk_size, low_memory=False):
+                ip_chunk = chunk[chunk["IP"].notna()]
+                if not ip_chunk.empty:
+                    ip_chunk.to_csv(ip_output_file, mode='a', header=not ip_header_written, index=False, quoting=1)
+                    ip_header_written = True
+
+                domain_chunk = chunk[chunk["Domain"].notna()]
+                if not domain_chunk.empty:
+                    domain_chunk.to_csv(domain_output_file, mode='a', header=not domain_header_written, index=False, quoting=1)
+                    domain_header_written = True
+
+            click.echo(f"[OK] Successfully split indicators into {ip_output_file} and {domain_output_file}")
 
     except Exception as e:
         click.echo(f"[ERROR] Error splitting indicators: {e}")
         logger.error(f"Split indicators error: {e}")
-        raise click.ClickException(str(e))
         raise click.ClickException(str(e))
 
 

@@ -125,69 +125,21 @@ class DataProcessor:
         return None
 
     def generate_description(self, row_data: Dict[str, Any]) -> str:
-        """Generate a detailed description for an IOC.
+        """Generate a detailed description for an IOC with source-separated information.
 
         Args:
             row_data: Dictionary containing IOC data
 
         Returns:
-            Formatted description string
+            Formatted description string with clear source attribution
         """
         parts = []
 
-        # Source and indicator type
+        # Basic info
         source = row_data.get('Source', 'unknown source')
         indicator_type = row_data.get('Original Type', 'indicator')
         indicator_value = row_data.get('IP') or row_data.get('Domain', 'Unknown')
-        parts.append(f"[Source: {source.upper()}] This {indicator_type} ({indicator_value}) is associated with {row_data.get('Threat Actor Name', 'unknown threat actor')}.")
-
-        # Confidence and scores
-        confidence = row_data.get('Confidence')
-        ic_score = row_data.get('IC Score')
-        threat_score = row_data.get('Threat Score')
-        if confidence or ic_score or threat_score:
-            score_parts = []
-            if confidence:
-                score_parts.append(f"{confidence} confidence")
-            if ic_score:
-                score_parts.append(f"IC Score: {ic_score}")
-            if threat_score:
-                score_parts.append(f"Threat Score: {threat_score}")
-            parts.append(f"Intelligence assessment: {', '.join(score_parts)}.")
-
-        # Malware information (from both sources)
-        malware_info = []
-        if not pd.isna(row_data.get('Associated Malware')):
-            malware_info.append(str(row_data.get('Associated Malware')))
-        if not pd.isna(row_data.get('Malware Families')):
-            malware_info.append(str(row_data.get('Malware Families')))
-        if malware_info:
-            parts.append(f"Associated malware: {', '.join(malware_info)}.")
-
-        # Tools
-        if not pd.isna(row_data.get('Associated Tools')):
-            parts.append(f"Tools used: {row_data.get('Associated Tools')}.")
-
-        # Campaigns
-        if not pd.isna(row_data.get('Associated Campaigns')):
-            parts.append(f"Related campaigns: {row_data.get('Associated Campaigns')}.")
-
-        # Kill chain stages
-        if not pd.isna(row_data.get('Kill Chains')):
-            parts.append(f"Kill chain stages: {row_data.get('Kill Chains')}.")
-
-        # Reports
-        reports = []
-        if not pd.isna(row_data.get('Associated Reports')):
-            reports.append(str(row_data.get('Associated Reports')))
-        if not pd.isna(row_data.get('Reports')):
-            reports.append(str(row_data.get('Reports')))
-        if reports:
-            parts.append(f"Referenced in reports: {', '.join(reports)}.")
-
-        # Labels/tags
-        if not pd.isna(row_data.get('Labels')):
-            parts.append(f"Tags: {row_data.get('Labels')}.")
+        parts.append(f"This {indicator_type} ({indicator_value}) is associated with {row_data.get('Threat Actor Name', 'unknown threat actor')}.")
 
         # Dates
         first_seen = row_data.get('First Seen')
@@ -200,18 +152,94 @@ class DataProcessor:
                 date_parts.append(f"last seen {last_seen}")
             parts.append(f"Activity timeline: {', '.join(date_parts)}.")
 
-        # Hashes if available
-        hashes = []
-        if not pd.isna(row_data.get('SHA256')):
-            hashes.append(f"SHA256: {row_data.get('SHA256')}")
-        if not pd.isna(row_data.get('SHA1')):
-            hashes.append(f"SHA1: {row_data.get('SHA1')}")
-        if hashes:
-            parts.append(f"File hashes: {', '.join(hashes)}.")
+        # Separate Mandiant and CrowdStrike information
+        mandiant_parts = []
+        crowdstrike_parts = []
 
-        # Exclusive intel
-        if row_data.get('Exclusive') == True or row_data.get('Exclusive') == 'True':
-            parts.append("This is exclusive intelligence.")
+        # Check if we have Mandiant data
+        has_mandiant = (
+            not pd.isna(row_data.get('IC Score')) or
+            not pd.isna(row_data.get('Associated Malware')) or
+            not pd.isna(row_data.get('Associated Tools')) or
+            not pd.isna(row_data.get('Associated Campaigns')) or
+            not pd.isna(row_data.get('Associated Reports')) or
+            'mandiant' in str(source).lower()
+        )
+
+        # Check if we have CrowdStrike data
+        has_crowdstrike = (
+            not pd.isna(row_data.get('Malware Families')) or
+            not pd.isna(row_data.get('Kill Chains')) or
+            not pd.isna(row_data.get('Labels')) or
+            not pd.isna(row_data.get('Reports')) or
+            'crowdstrike' in str(source).lower()
+        )
+
+        # MANDIANT INTELLIGENCE
+        if has_mandiant:
+            # Scores (IC Score and Threat Score only, no confidence level)
+            ic_score = row_data.get('IC Score')
+            threat_score = row_data.get('Threat Score')
+            if ic_score or threat_score:
+                score_parts = []
+                if ic_score:
+                    score_parts.append(f"IC Score: {ic_score}")
+                if threat_score:
+                    score_parts.append(f"Threat Score: {threat_score}")
+                mandiant_parts.append(f"Scores: {', '.join(score_parts)}")
+
+            # Malware
+            if not pd.isna(row_data.get('Associated Malware')):
+                mandiant_parts.append(f"Associated malware: {row_data.get('Associated Malware')}")
+
+            # Tools
+            if not pd.isna(row_data.get('Associated Tools')):
+                mandiant_parts.append(f"Tools: {row_data.get('Associated Tools')}")
+
+            # Campaigns
+            if not pd.isna(row_data.get('Associated Campaigns')):
+                mandiant_parts.append(f"Campaigns: {row_data.get('Associated Campaigns')}")
+
+            # Reports
+            if not pd.isna(row_data.get('Associated Reports')):
+                mandiant_parts.append(f"Reports: {row_data.get('Associated Reports')}")
+
+            # Hashes
+            hashes = []
+            if not pd.isna(row_data.get('SHA256')):
+                hashes.append(f"SHA256: {row_data.get('SHA256')}")
+            if not pd.isna(row_data.get('SHA1')):
+                hashes.append(f"SHA1: {row_data.get('SHA1')}")
+            if hashes:
+                mandiant_parts.append(f"Hashes: {', '.join(hashes)}")
+
+            # Exclusive
+            if row_data.get('Exclusive') == True or row_data.get('Exclusive') == 'True':
+                mandiant_parts.append("Exclusive intelligence")
+
+        # CROWDSTRIKE INTELLIGENCE
+        if has_crowdstrike:
+            # Malware Families
+            if not pd.isna(row_data.get('Malware Families')):
+                crowdstrike_parts.append(f"Malware families: {row_data.get('Malware Families')}")
+
+            # Kill Chains
+            if not pd.isna(row_data.get('Kill Chains')):
+                crowdstrike_parts.append(f"Kill chain stages: {row_data.get('Kill Chains')}")
+
+            # Reports (only if not already added by Mandiant)
+            if not pd.isna(row_data.get('Reports')) and pd.isna(row_data.get('Associated Reports')):
+                crowdstrike_parts.append(f"Reports: {row_data.get('Reports')}")
+
+            # Labels/Tags
+            if not pd.isna(row_data.get('Labels')):
+                crowdstrike_parts.append(f"Tags: {row_data.get('Labels')}")
+
+        # Combine source-specific information
+        if mandiant_parts:
+            parts.append(f"[MANDIANT] {'; '.join(mandiant_parts)}.")
+        if crowdstrike_parts:
+            parts.append(f"[CROWDSTRIKE] {'; '.join(crowdstrike_parts)}.")
 
         return ' '.join(parts)
     
@@ -510,10 +538,13 @@ class DataProcessor:
             final_df['Confidence'] = final_df['Confidence_numeric'].map(reverse_confidence_mapping)
             final_df = final_df.drop(columns=['indicator_value', 'Confidence_numeric'])
 
+            # Regenerate descriptions after aggregation to include data from both sources
+            self.logger.info("Regenerating descriptions with merged source data...")
+            new_descriptions = []
+            for _, row in final_df.iterrows():
+                new_descriptions.append(self.generate_description(row.to_dict()))
+            final_df['Description'] = new_descriptions
 
-
-
-            
             # Remove rows where both IP and Domain are None
             final_df = final_df.dropna(subset=['IP', 'Domain'], how='all')
             

@@ -29,34 +29,100 @@ data_processing:
   combined_output_path: "output/combined"
 
 enrichment:
-  # Geolocation Services
-  maxmind_db_path: "data/enrichment/GeoLite2-City.mmdb"
-  ipinfo_api_key: "${IPINFO_API_KEY}"
-  
-  # Reputation Services
-  virustotal_api_key: "${VIRUSTOTAL_API_KEY}"
-  urlvoid_api_key: "${URLVOID_API_KEY}"
-  
-  # Rate Limiting
-  rate_limit_per_minute: 60
-  request_timeout: 30
-  max_concurrent_requests: 5
-  
-  # Cache Settings
-  enable_cache: true
-  cache_duration_hours: 24
-  
-  # Enrichment Options
-  auto_enrich: false
-  enrichment_sources: ["geolocation", "asn", "reputation"]
+  # General Settings
   skip_private_ips: true
+  auto_enrich: false
+  max_concurrent_requests: 10
+
+  # Cache Settings
+  cache:
+    enabled: true
+    db_path: "data/enrichment/cache.db"
+    ttl_geolocation: 2592000  # 30 days
+    ttl_network: 604800  # 7 days
+    ttl_cloud: 86400  # 24 hours
+    ttl_threat: 21600  # 6 hours
+    ttl_anonymization: 86400  # 24 hours
+    ttl_scanner: 43200  # 12 hours
+    ttl_certificates: 604800  # 7 days
+    ttl_passive_dns: -1  # Never expire
+
+  # Enrichment Modules
+  modules:
+    # Geolocation (MaxMind GeoIP2)
+    geolocation:
+      enabled: true
+      database_path: "data/enrichment/GeoLite2-City.mmdb"
+      confidence: 0.95
+
+    # Cloud Detection (AWS, Azure, GCP)
+    cloud:
+      enabled: true
+      providers:
+        - aws
+        - azure
+        - gcp
+      cache_dir: "data/enrichment/cloud_ranges"
+      update_frequency: 86400  # 24 hours
+      confidence: 0.99
+
+    # Network/BGP/ASN (BGPView)
+    network:
+      enabled: true
+      provider: "bgpview"
+      confidence: 0.95
+
+    # Scanner Detection (GreyNoise + Shodan)
+    scanner:
+      enabled: true
+      use_greynoise: true
+      use_shodan: true
+      greynoise_api_key: "${GREYNOISE_API_KEY}"
+      shodan_api_key: "${SHODAN_API_KEY}"
+      confidence: 0.90
+
+    # Threat Intelligence (VirusTotal, OTX, AbuseIPDB)
+    threat:
+      enabled: true
+      use_virustotal: true
+      use_otx: true
+      use_abuseipdb: true
+      virustotal_api_key: "${VIRUSTOTAL_API_KEY}"
+      otx_api_key: "${OTX_API_KEY}"
+      abuseipdb_api_key: "${ABUSEIPDB_API_KEY}"
+      confidence: 0.85
+
+    # Anonymization Detection (VPN/Proxy/Tor)
+    anonymization:
+      enabled: false  # Optional, requires additional API keys
+      use_ipqualityscore: false
+      ipqualityscore_api_key: "${IPQS_API_KEY}"
+      confidence: 0.95
+
+    # Certificate Intelligence (Censys, crt.sh)
+    certificates:
+      enabled: false  # Optional, requires Censys API
+      use_censys: false
+      use_crtsh: false
+      censys_api_id: "${CENSYS_API_ID}"
+      censys_api_secret: "${CENSYS_API_SECRET}"
+      max_certificates: 100
+      confidence: 0.85
+
+    # Passive DNS
+    passive_dns:
+      enabled: false  # Optional, expensive
+      provider: "securitytrails"
+      securitytrails_api_key: "${SECURITYTRAILS_API_KEY}"
+      max_domains: 50
+      confidence: 0.75
 
 browser:
   headless: false
   download_timeout: 30
   page_load_timeout: 20
   implicit_wait: 10
-  window_size: [1920, 1080]
+  window_size: [1280, 800]  # Reasonable size that fits most screens
 
 logging:
   level: "INFO"

@@ -304,6 +304,11 @@ def split_indicators(input_file: Optional[Path], output_dir: Optional[Path], by_
             crowdstrike_ip_file = output_dir / "crowdstrike_ip_addresses.csv"
             crowdstrike_domain_file = output_dir / "crowdstrike_domains.csv"
 
+            # Delete existing files to prevent appending to old data
+            for f in [mandiant_ip_file, mandiant_domain_file, crowdstrike_ip_file, crowdstrike_domain_file]:
+                if f.exists():
+                    f.unlink()
+
             headers_written = {
                 'mandiant_ip': False,
                 'mandiant_domain': False,
@@ -314,26 +319,50 @@ def split_indicators(input_file: Optional[Path], output_dir: Optional[Path], by_
             chunk_size = 1000
             for chunk in pd.read_csv(input_file, chunksize=chunk_size, low_memory=False):
                 # Mandiant IPs
-                mandiant_ip_chunk = chunk[(chunk["IP"].notna()) & (chunk["Source"].str.contains('mandiant', case=False, na=False))]
+                mandiant_ip_chunk = chunk[(chunk["IP"].notna()) & (chunk["Source"].str.contains('mandiant', case=False, na=False))].copy()
                 if not mandiant_ip_chunk.empty:
+                    mandiant_ip_chunk['Description'] = mandiant_ip_chunk.apply(
+                        lambda row: f"[Mandiant]\nThis IP is associated with {row.get('Threat Actor Name', 'Unknown')}\n"
+                                  f"Last seen {row.get('Last Seen', 'Unknown')}\n"
+                                  f"IC Score: {row.get('IC Score', 'N/A')}, Threat Score: {row.get('Threat Score', 'N/A')}",
+                        axis=1
+                    )
                     mandiant_ip_chunk.to_csv(mandiant_ip_file, mode='a', header=not headers_written['mandiant_ip'], index=False, quoting=1)
                     headers_written['mandiant_ip'] = True
 
                 # Mandiant Domains
-                mandiant_domain_chunk = chunk[(chunk["Domain"].notna()) & (chunk["Source"].str.contains('mandiant', case=False, na=False))]
+                mandiant_domain_chunk = chunk[(chunk["Domain"].notna()) & (chunk["Source"].str.contains('mandiant', case=False, na=False))].copy()
                 if not mandiant_domain_chunk.empty:
+                    mandiant_domain_chunk['Description'] = mandiant_domain_chunk.apply(
+                        lambda row: f"[Mandiant]\nThis domain is associated with {row.get('Threat Actor Name', 'Unknown')}\n"
+                                  f"Last seen {row.get('Last Seen', 'Unknown')}\n"
+                                  f"IC Score: {row.get('IC Score', 'N/A')}, Threat Score: {row.get('Threat Score', 'N/A')}",
+                        axis=1
+                    )
                     mandiant_domain_chunk.to_csv(mandiant_domain_file, mode='a', header=not headers_written['mandiant_domain'], index=False, quoting=1)
                     headers_written['mandiant_domain'] = True
 
                 # CrowdStrike IPs
-                crowdstrike_ip_chunk = chunk[(chunk["IP"].notna()) & (chunk["Source"].str.contains('crowdstrike', case=False, na=False))]
+                crowdstrike_ip_chunk = chunk[(chunk["IP"].notna()) & (chunk["Source"].str.contains('crowdstrike', case=False, na=False))].copy()
                 if not crowdstrike_ip_chunk.empty:
+                    crowdstrike_ip_chunk['Description'] = crowdstrike_ip_chunk.apply(
+                        lambda row: f"[CrowdStrike]\nThis IP is associated with {row.get('Threat Actor Name', 'Unknown')}\n"
+                                  f"Last seen {row.get('Last Seen', 'Unknown')}\n"
+                                  f"IC Score: {row.get('IC Score', 'N/A')}, Threat Score: {row.get('Threat Score', 'N/A')}",
+                        axis=1
+                    )
                     crowdstrike_ip_chunk.to_csv(crowdstrike_ip_file, mode='a', header=not headers_written['crowdstrike_ip'], index=False, quoting=1)
                     headers_written['crowdstrike_ip'] = True
 
                 # CrowdStrike Domains
-                crowdstrike_domain_chunk = chunk[(chunk["Domain"].notna()) & (chunk["Source"].str.contains('crowdstrike', case=False, na=False))]
+                crowdstrike_domain_chunk = chunk[(chunk["Domain"].notna()) & (chunk["Source"].str.contains('crowdstrike', case=False, na=False))].copy()
                 if not crowdstrike_domain_chunk.empty:
+                    crowdstrike_domain_chunk['Description'] = crowdstrike_domain_chunk.apply(
+                        lambda row: f"[CrowdStrike]\nThis domain is associated with {row.get('Threat Actor Name', 'Unknown')}\n"
+                                  f"Last seen {row.get('Last Seen', 'Unknown')}\n"
+                                  f"IC Score: {row.get('IC Score', 'N/A')}, Threat Score: {row.get('Threat Score', 'N/A')}",
+                        axis=1
+                    )
                     crowdstrike_domain_chunk.to_csv(crowdstrike_domain_file, mode='a', header=not headers_written['crowdstrike_domain'], index=False, quoting=1)
                     headers_written['crowdstrike_domain'] = True
 
@@ -347,18 +376,38 @@ def split_indicators(input_file: Optional[Path], output_dir: Optional[Path], by_
             ip_output_file = output_dir / "ip_addresses.csv"
             domain_output_file = output_dir / "domains.csv"
 
+            # Delete existing files to prevent appending to old data
+            if ip_output_file.exists():
+                ip_output_file.unlink()
+            if domain_output_file.exists():
+                domain_output_file.unlink()
+
             chunk_size = 1000
             ip_header_written = False
             domain_header_written = False
 
             for chunk in pd.read_csv(input_file, chunksize=chunk_size, low_memory=False):
-                ip_chunk = chunk[chunk["IP"].notna()]
+                ip_chunk = chunk[chunk["IP"].notna()].copy()
                 if not ip_chunk.empty:
+                    ip_chunk['Description'] = ip_chunk.apply(
+                        lambda row: f"[{row.get('Source', 'Unknown').title()}]\n"
+                                  f"This IP is associated with {row.get('Threat Actor Name', 'Unknown')}\n"
+                                  f"Last seen {row.get('Last Seen', 'Unknown')}\n"
+                                  f"IC Score: {row.get('IC Score', 'N/A')}, Threat Score: {row.get('Threat Score', 'N/A')}",
+                        axis=1
+                    )
                     ip_chunk.to_csv(ip_output_file, mode='a', header=not ip_header_written, index=False, quoting=1)
                     ip_header_written = True
 
-                domain_chunk = chunk[chunk["Domain"].notna()]
+                domain_chunk = chunk[chunk["Domain"].notna()].copy()
                 if not domain_chunk.empty:
+                    domain_chunk['Description'] = domain_chunk.apply(
+                        lambda row: f"[{row.get('Source', 'Unknown').title()}]\n"
+                                  f"This domain is associated with {row.get('Threat Actor Name', 'Unknown')}\n"
+                                  f"Last seen {row.get('Last Seen', 'Unknown')}\n"
+                                  f"IC Score: {row.get('IC Score', 'N/A')}, Threat Score: {row.get('Threat Score', 'N/A')}",
+                        axis=1
+                    )
                     domain_chunk.to_csv(domain_output_file, mode='a', header=not domain_header_written, index=False, quoting=1)
                     domain_header_written = True
 
@@ -773,34 +822,188 @@ def plugin_status(plugin_type: Optional[str]):
     """Show detailed plugin status and health."""
     try:
         from ..core.plugin_system.registry import plugin_registry
-        
+
         console.print("[bold blue]Plugin Status Report:")
-        
+
         # Show plugin health status
         table = Table(title="Plugin Health Check")
         table.add_column("Type", style="cyan")
         table.add_column("Name", style="magenta")
         table.add_column("Health", style="green")
         table.add_column("Version", style="yellow")
-        
+
         # This would check actual plugin health
         plugins_to_check = []
-        
+
         if not plugin_type or plugin_type == "scraper":
             plugins_to_check.extend([("scraper", name) for name in plugin_registry.get_available_scrapers()])
-        
+
         if not plugin_type or plugin_type == "enricher":
             plugins_to_check.extend([("enricher", name) for name in plugin_registry.get_available_enrichers()])
-        
+
         if not plugin_type or plugin_type == "exporter":
             plugins_to_check.extend([("exporter", name) for name in plugin_registry.get_available_exporters()])
-        
+
         for ptype, pname in plugins_to_check:
             # Would check actual plugin health here
             table.add_row(ptype.title(), pname, "Healthy", "1.0.0")
-        
+
         console.print(table)
-        
+
     except Exception as e:
         console.print(f"[red]Error checking plugin status: {e}")
+        raise click.ClickException(str(e))
+
+
+@click.command()
+@click.option("--csv-file", "-f",
+              type=click.Path(exists=True, path_type=Path),
+              help="CSV file containing IOCs with Reports column (defaults to output/separated/ip_addresses.csv)")
+@click.option("--output-dir", "-o",
+              type=click.Path(path_type=Path),
+              help="Output directory for PDFs and text files (defaults to downloads/crowdstrike_reports)")
+@click.option("--config", "-c",
+              type=click.Path(exists=True),
+              help="Path to configuration file")
+@click.option("--log-level", "-l",
+              type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"]),
+              default="INFO",
+              help="Logging level")
+def scrape_crowdstrike_pdfs(csv_file: Optional[Path], output_dir: Optional[Path], config: Optional[str], log_level: str):
+    """Download PDFs from CrowdStrike reports referenced in IOC CSV file."""
+    setup_logging(log_level)
+
+    try:
+        # Initialize configuration
+        config_manager = ConfigManager(config)
+
+        # Use default path if not provided
+        if not csv_file:
+            csv_file = Path("output/separated/ip_addresses.csv")
+            if not csv_file.exists():
+                console.print(f"[red]Default CSV file not found: {csv_file}")
+                console.print("[yellow]Please specify a CSV file with --csv-file option")
+                return
+
+        # Use default output directory if not provided
+        if not output_dir:
+            output_dir = Path("downloads/crowdstrike_reports")
+
+        console.print(f"[bold blue]Downloading CrowdStrike report PDFs from: {csv_file}")
+        console.print(f"[bold blue]Output directory: {output_dir}")
+
+        # Initialize CrowdStrike scraper
+        scraper = CrowdStrikeScraper(config_manager)
+
+        # Setup scraper (login)
+        console.print("[yellow]Initializing CrowdStrike session...")
+        if not scraper.setup():
+            console.print("[red]Failed to setup CrowdStrike scraper")
+            return
+
+        try:
+            # Download PDFs
+            console.print("[green]Starting PDF downloads...")
+            stats = scraper.scrape_pdfs_from_csv(str(csv_file), str(output_dir) if output_dir else None)
+
+            # Display results
+            if "error" in stats:
+                console.print(f"[red]Error: {stats['error']}")
+            else:
+                console.print("\n[bold green]PDF Download Summary:")
+                console.print(f"  Total reports found: {stats['total_reports']}")
+                console.print(f"  Successfully downloaded: {stats['downloaded']}")
+                console.print(f"  Failed: {stats['failed']}")
+                console.print(f"  Skipped (no PDF): {stats['skipped']}")
+
+                if stats['files']:
+                    console.print(f"\n[blue]Downloaded files:")
+                    for file_path in stats['files'][:10]:  # Show first 10
+                        console.print(f"  - {file_path}")
+                    if len(stats['files']) > 10:
+                        console.print(f"  ... and {len(stats['files']) - 10} more")
+
+        finally:
+            scraper.cleanup()
+
+    except Exception as e:
+        console.print(f"[red]Error downloading PDFs: {e}")
+        logger.error(f"PDF download error: {e}")
+        raise click.ClickException(str(e))
+
+
+@click.command()
+@click.option("--csv-file", "-f",
+              type=click.Path(exists=True, path_type=Path),
+              help="CSV file containing IOCs with Associated Reports column (defaults to output/separated/ip_addresses.csv)")
+@click.option("--output-dir", "-o",
+              type=click.Path(path_type=Path),
+              help="Output directory for PDFs (defaults to downloads/mandiant_reports)")
+@click.option("--config", "-c",
+              type=click.Path(exists=True),
+              help="Path to configuration file")
+@click.option("--log-level", "-l",
+              type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"]),
+              default="INFO",
+              help="Logging level")
+def scrape_mandiant_pdfs(csv_file: Optional[Path], output_dir: Optional[Path], config: Optional[str], log_level: str):
+    """Download PDFs from Mandiant reports referenced in IOC CSV file."""
+    setup_logging(log_level)
+
+    try:
+        # Initialize configuration
+        config_manager = ConfigManager(config)
+
+        # Use default path if not provided
+        if not csv_file:
+            csv_file = Path("output/separated/ip_addresses.csv")
+            if not csv_file.exists():
+                console.print(f"[red]Default CSV file not found: {csv_file}")
+                console.print("[yellow]Please specify a CSV file with --csv-file option")
+                return
+
+        # Use default output directory if not provided
+        if not output_dir:
+            output_dir = Path("downloads/mandiant_reports")
+
+        console.print(f"[bold blue]Downloading Mandiant report PDFs from: {csv_file}")
+        console.print(f"[bold blue]Output directory: {output_dir}")
+
+        # Initialize Mandiant scraper
+        scraper = MandiantScraper(config_manager)
+
+        # Setup scraper (login)
+        console.print("[yellow]Initializing Mandiant session...")
+        if not scraper.setup():
+            console.print("[red]Failed to setup Mandiant scraper")
+            return
+
+        try:
+            # Download PDFs
+            console.print("[green]Starting PDF downloads...")
+            stats = scraper.scrape_pdfs_from_csv(str(csv_file), str(output_dir) if output_dir else None)
+
+            # Display results
+            if "error" in stats:
+                console.print(f"[red]Error: {stats['error']}")
+            else:
+                console.print("\n[bold green]PDF Download Summary:")
+                console.print(f"  Total reports found: {stats['total_reports']}")
+                console.print(f"  Successfully downloaded: {stats['downloaded']}")
+                console.print(f"  Failed: {stats['failed']}")
+                console.print(f"  Skipped (no PDF): {stats['skipped']}")
+
+                if stats['files']:
+                    console.print(f"\n[blue]Downloaded files:")
+                    for file_path in stats['files'][:10]:  # Show first 10
+                        console.print(f"  - {file_path}")
+                    if len(stats['files']) > 10:
+                        console.print(f"  ... and {len(stats['files']) - 10} more")
+
+        finally:
+            scraper.cleanup()
+
+    except Exception as e:
+        console.print(f"[red]Error downloading PDFs: {e}")
+        logger.error(f"PDF download error: {e}")
         raise click.ClickException(str(e))

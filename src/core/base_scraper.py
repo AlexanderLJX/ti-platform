@@ -8,8 +8,8 @@ from pathlib import Path
 
 from .models import ThreatActor, ScrapingJob, ScrapingStatus, ScrapingConfig
 from .config import ConfigManager
-from ..utils.selenium_helper import SeleniumHelper
-from ..utils.auth_handler import AuthHandler
+from ..utils.playwright_helper import PlaywrightHelper
+from ..utils.playwright_auth_handler import PlaywrightAuthHandler
 from ..utils.file_handler import FileHandler
 
 logger = logging.getLogger(__name__)
@@ -17,10 +17,10 @@ logger = logging.getLogger(__name__)
 
 class BaseScraper(ABC):
     """Abstract base class for threat intelligence scrapers."""
-    
+
     def __init__(self, source: str, config_manager: ConfigManager):
         """Initialize base scraper.
-        
+
         Args:
             source: Source name (mandiant, crowdstrike)
             config_manager: Configuration manager instance
@@ -29,48 +29,48 @@ class BaseScraper(ABC):
         self.config_manager = config_manager
         self.config = config_manager.get_scraper_config(source)
         self.app_config = config_manager.get_config()
-        
+
         # Initialize components
-        self.selenium_helper = SeleniumHelper(
+        self.playwright_helper = PlaywrightHelper(
             config=self.app_config.browser,
             profile_path=self.config.profile_path,
             download_path=self.config.download_path
         )
-        self.auth_handler = None  # Will be initialized after driver setup
+        self.auth_handler = None  # Will be initialized after browser setup
         self.file_handler = FileHandler(self.config.download_path)
-        
+
         # State
-        self.driver = None
+        self.page = None
         self.is_authenticated = False
         self.current_job: Optional[ScrapingJob] = None
-        
+
         # Setup logging
         self.logger = logging.getLogger(f"{__name__}.{source}")
     
     def setup(self) -> bool:
-        """Set up the scraper (driver, authentication, etc.).
-        
+        """Set up the scraper (browser, authentication, etc.).
+
         Returns:
             True if setup successful, False otherwise
         """
         try:
             self.logger.info(f"Setting up {self.source} scraper")
-            
-            # Setup WebDriver
-            self.driver = self.selenium_helper.setup_driver()
-            if not self.driver:
-                self.logger.error("Failed to setup WebDriver")
+
+            # Setup Playwright browser
+            self.page = self.playwright_helper.setup_browser()
+            if not self.page:
+                self.logger.error("Failed to setup Playwright browser")
                 return False
-            
-            # Initialize auth handler with driver
-            self.auth_handler = AuthHandler(self.selenium_helper)
-            
+
+            # Initialize auth handler with Playwright helper
+            self.auth_handler = PlaywrightAuthHandler(self.playwright_helper)
+
             # Validate configuration paths
             self.config_manager.validate_paths()
-            
+
             self.logger.info(f"{self.source} scraper setup completed")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Setup failed for {self.source}: {e}")
             return False
@@ -78,48 +78,61 @@ class BaseScraper(ABC):
     def cleanup(self):
         """Clean up resources."""
         try:
-            if self.selenium_helper:
-                self.selenium_helper.quit_driver()
-            
+            if self.playwright_helper:
+                self.playwright_helper.quit_browser()
+
             if self.file_handler:
                 self.file_handler.cleanup_temp_files()
-            
+
             self.logger.info(f"{self.source} scraper cleanup completed")
-            
+
         except Exception as e:
             self.logger.error(f"Cleanup error for {self.source}: {e}")
     
     def authenticate(self) -> bool:
         """Authenticate with the target platform.
-        
+
         Returns:
             True if authentication successful, False otherwise
         """
         try:
             self.logger.info(f"Starting authentication for {self.source}")
-            
+
             # Navigate to login page
-            if not self.selenium_helper.navigate_to(self.config.login_url):
+            if not self.playwright_helper.navigate_to(self.config.login_url):
                 self.logger.error("Failed to navigate to login page")
                 return False
-            
+
             # Check if already logged in
             success_indicators, login_indicators = self._get_auth_indicators()
             if self.auth_handler.check_login_status(success_indicators, login_indicators):
-                self.logger.info("Already authenticated")
-                self.is_authenticated = True
-                return self._post_login_navigation()
-            
+                self.logger.info("Appears authenticated - verifying session validity...")
+
+                # Try post-login navigation to verify session is still valid
+                if self._post_login_navigation():
+                    self.logger.info("Session verified - already authenticated")
+                    self.is_authenticated = True
+                    return True
+                else:
+                    self.logger.warning("Session invalid - clearing saved state and re-authenticating")
+                    # Delete the stale state file
+                    if self.playwright_helper.state_file.exists():
+                        self.playwright_helper.state_file.unlink()
+                    # Navigate back to login page
+                    if not self.playwright_helper.navigate_to(self.config.login_url):
+                        self.logger.error("Failed to navigate back to login page")
+                        return False
+
             # Get credentials
             try:
                 credentials = self.config_manager.get_credentials(self.source)
             except ValueError as e:
                 self.logger.error(f"Credentials error: {e}")
                 return False
-            
+
             # Perform login
             email_selector, password_selector, submit_selectors, next_selector = self._get_login_selectors()
-            
+
             if not self.auth_handler.perform_login(
                 credentials=credentials,
                 email_selector=email_selector,
@@ -129,10 +142,10 @@ class BaseScraper(ABC):
             ):
                 self.logger.error("Login failed")
                 return False
-            
+
             # Handle 2FA if required
             token_selectors, submit_selectors = self._get_2fa_selectors()
-            
+
             # Check if TOTP secret is available for automatic 2FA
             totp_secret = credentials.get('totp_secret')
             if totp_secret:
@@ -153,7 +166,7 @@ class BaseScraper(ABC):
                 ):
                     self.logger.error("Manual 2FA failed")
                     return False
-            
+
             # Verify login success
             if not self.auth_handler.verify_login_success(
                 success_indicators=success_indicators,
@@ -161,16 +174,16 @@ class BaseScraper(ABC):
             ):
                 self.logger.error("Login verification failed")
                 return False
-            
+
             # Post-login navigation
             if not self._post_login_navigation():
                 self.logger.error("Post-login navigation failed")
                 return False
-            
+
             self.is_authenticated = True
             self.logger.info(f"Authentication successful for {self.source}")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Authentication failed for {self.source}: {e}")
             return False

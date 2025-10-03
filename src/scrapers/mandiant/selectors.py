@@ -1,16 +1,14 @@
-"""Mandiant-specific CSS selectors and XPath expressions."""
+"""Mandiant-specific CSS selectors for Playwright."""
 
-from selenium.webdriver.common.by import By
+# Authentication selectors (CSS)
+EMAIL_FIELD = "#email"
+PASSWORD_FIELD = "#password"
+NEXT_BUTTON = "#id_first_next"
+SIGN_IN_BUTTON = "#sign_in_btn"
 
-# Authentication selectors
-EMAIL_FIELD = (By.ID, "email")
-PASSWORD_FIELD = (By.ID, "password")
-NEXT_BUTTON = (By.ID, "id_first_next")
-SIGN_IN_BUTTON = (By.ID, "sign_in_btn")
-
-# 2FA selectors
-TOKEN_FIELD = (By.ID, "token_code")
-TOKEN_SUBMIT_BUTTON = (By.CSS_SELECTOR, "button[type='submit']")
+# 2FA selectors (CSS)
+TOKEN_FIELD = "#token_code"
+TOKEN_SUBMIT_BUTTON = "button[type='submit']"
 
 # Success indicators
 SUCCESS_URL_INDICATORS = [
@@ -18,27 +16,50 @@ SUCCESS_URL_INDICATORS = [
     "advantage.mandiant.com"
 ]
 
-# Login form indicators  
+# Login form indicators
 LOGIN_FORM_INDICATORS = [
-    EMAIL_FIELD,
-    PASSWORD_FIELD
+    "#email",
+    "#password"
 ]
 
-# Take Action dropdown selectors
+# Take Action dropdown selectors (CSS/text-based)
 TAKE_ACTION_SELECTORS = [
-    (By.XPATH, "//div[@role='button' and contains(text(), 'Take Action')]"),
-    (By.XPATH, "//div[contains(text(), 'Take Action')]"),
-    (By.CSS_SELECTOR, "div[aria-haspopup='menu']"),
-    (By.XPATH, "//div[@aria-haspopup='menu']")
+    "text=Take Action",
+    "div[aria-haspopup='menu']",
+    "div[role='button']:has-text('Take Action')"
 ]
 
-# Download Indicators option selectors
+# Download Indicators option selectors (CSS/text-based)
 DOWNLOAD_INDICATORS_SELECTORS = [
-    (By.XPATH, "//div[@role='menuitem' and contains(text(), 'Download Indicators')]"),
-    (By.XPATH, "//div[contains(text(), 'Download Indicators')]"),
-    (By.XPATH, "//div[@role='menuitem']//text()[contains(., 'Download Indicators')]/parent::*")
+    "text=Download Indicators",
+    "div[role='menuitem']:has-text('Download Indicators')"
 ]
+
+# Report PDF selectors (multiple fallbacks)
+PDF_DOWNLOAD_BUTTON_SELECTORS = [
+    "button.css-1xd8ns1:has-text('Download PDF')",  # Most specific - try first
+    "button[type='button']:has-text('Download PDF')",
+    "button:has-text('Download PDF')",
+    "button:has-text('PDF')",
+    "a:has-text('Download PDF')",
+    "[aria-label*='Download PDF' i]",
+    "div[role='button']:has-text('Download PDF')"
+]
+
+# Legacy single selector for compatibility
+PDF_DOWNLOAD_BUTTON = "button:has-text('Download PDF')"
 
 # URLs
 BASE_URL = "https://advantage.mandiant.com"
 LOGIN_URL = "https://login.mandiant.com/"
+
+def get_report_url(report_id: str) -> str:
+    """Get the report URL for a specific report.
+
+    Args:
+        report_id: The report ID (e.g., '19-00007872')
+
+    Returns:
+        Full URL for the report page
+    """
+    return f"https://advantage.mandiant.com/reports/{report_id}"
